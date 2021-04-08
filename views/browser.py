@@ -127,6 +127,8 @@ class Browser(metaclass=ABCMeta):
                 self.web_driver.find_element_by_id(path)
             elif by == self.By.CLASS_NAME:
                 self.web_driver.find_element_by_class_name(path)
+            elif by == self.By.CSS_SELECTOR:
+                self.web_driver.find_elements_by_css_selector(path)
             elif by == self.By.NAME:
                 self.web_driver.find_element_by_name(path)
             elif by == self.By.LINK_TEXT:

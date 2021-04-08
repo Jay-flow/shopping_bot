@@ -21,7 +21,7 @@ class ProductModel(Base):
     courier = Column(VARCHAR(20), comment='택배사', nullable=False)
     delivery_charge = Column(BIGINT(unsigned=True), comment='배송비', nullable=False)
     arrival_date = Column(VARCHAR(20), comment='도착 날짜', nullable=False)
-    arrival_probability = Column(TINYINT(unsigned=True), comment='도착 확률', nullable=False)
+    arrival_probability = Column(TINYINT(unsigned=True), comment='도착 확률', nullable=True)
     benefit = Column(JSON, comment='수량', nullable=False)
     created_at = Column(TIMESTAMP, nullable=False, comment='생성 날짜', default=datetime.now())
     updated_at = Column(TIMESTAMP, nullable=False, comment='업데이트 날짜', onupdate=datetime.now(), default=datetime.now())

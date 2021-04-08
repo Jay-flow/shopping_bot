@@ -1,15 +1,14 @@
 import re
+from dataclasses import dataclass
+from typing import Optional, List, Union
 
 from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.remote.webelement import WebElement
-from views.browser import Browser
 from selenium.webdriver.support import expected_conditions
-from time import sleep
-from models.tables import ProductModel, ProductImageModel
-from dataclasses import dataclass
-from config import WEB_DRIVER_WAIT_TIME
-from typing import Optional, List
+from sqlalchemy import null
+
+from models.tables import ProductModel
+from views.browser import Browser
 
 
 @dataclass
@@ -23,6 +22,7 @@ class Size:
 class Color:
     name: str
     price: int
+    quantity: Union[int, null]
     sizes: List[Size]
 
 
@@ -47,24 +47,26 @@ class Sneakers:
             print(url)
 
     def __input_personal_customs_clearance_unique_number(self):
-        if self.browser.is_find_element(self.browser.By.CSS_SELECTOR, "input[title='개인통관고유번호']"):
+        try:
             self.browser.web_driver.find_element_by_css_selector("input[title='개인통관고유번호']").send_keys("1")
             self.browser.web_driver.find_element_by_id("mirroredSecondOptionButton").click()
+        except NoSuchElementException:
+            pass
 
     def __insert_products(self, product_url: str):
-        name = self.browser.web_driver.find_element_by_css_selector(".title").text
+        name = self.browser.web_driver.find_element_by_css_selector("h1.title").text
         price = int(
             self.browser.web_driver.find_element_by_css_selector(".price")
                 .find_element_by_tag_name("span.value").text
                 .replace(",", "")
         )
-        delivery_charge = re.search(
-            r"\d+", self.browser.web_driver.find_element_by_css_selector(".delivery dt").text
-        ).group()
-        arrival_probability = int(
-            self.browser.web_driver.find_element_by_css_selector(".c_product_tooltip_style3 .text_num").text
-                .replace("%", "")
+        find_delivery_charge = ''.join(
+            re.findall(r"\d+[^개원,]", self.browser.web_driver.find_element_by_css_selector(".delivery dt").text)
         )
+        delivery_charge = 0 if find_delivery_charge == '' else find_delivery_charge
+        find_arrival_probability = self.browser.web_driver \
+            .find_element_by_css_selector(".c_product_tooltip_style3 .text_num").text
+        arrival_probability = None if find_arrival_probability == '' else int(find_arrival_probability.replace("%", ""))
         arrival_date = self.browser.web_driver.find_element_by_css_selector(".delivery .text_em2").text
         courier = self.browser.web_driver.find_element_by_css_selector(".delivery span.text_num").text
         benefits = [benefit.text for benefit in
@@ -80,13 +82,6 @@ class Sneakers:
             benefit=benefits,
         )
 
-    def __get_size_quantity(self, size_container: WebElement):
-        try:
-            if size_container.find_element_by_css_selector("span.text_em_sm").text == "품절":
-                return 0
-        except NoSuchElementException:
-            return None
-
     def __get_sizes(self) -> List[Size]:
         size_container_tag = "div[class='accordion_section bot_option_section " \
                              "c_product_dropdown_wrap c_product_dropdown_style1 active'] li"
@@ -101,7 +96,7 @@ class Sneakers:
                 size_price = int(size_raw_price.text.replace(",", ""))
             except NoSuchElementException:
                 size_price = None
-            size_quantity = self.__get_size_quantity(size_container)
+            size_quantity = self.__get_quantity(size_container)
             sizes.append(
                 Size(
                     name=size_name,
@@ -111,6 +106,19 @@ class Sneakers:
             )
         return sizes
 
+    def __get_quantity(self, option: WebElement) -> int:
+        try:
+            find_text = option.find_element_by_css_selector("span.text_em_sm").text
+            if find_text == "품절":
+                return 0
+
+            find_quantity = re.search(r"\d+", find_text)
+            if find_quantity is not None:
+                return int(find_quantity.group())
+        except NoSuchElementException:
+            pass
+        return null()
+
     def __insert_options(self):
         self.__input_personal_customs_clearance_unique_number()
         color_container_selector = "ul[class='option_item_list bot_typ_01 b_product_buy_option']"
@@ -118,16 +126,24 @@ class Sneakers:
                                      expected_conditions.visibility_of_all_elements_located)
         color_container = self.browser.web_driver.find_element_by_css_selector(color_container_selector)
         color_options = color_container.find_elements_by_tag_name("li")
-        for color_option in color_options:
+        for idx, color_option in enumerate(color_options):
             color_name = color_option.find_element_by_tag_name("strong").text
-            color_price = int(
-                color_option.find_element_by_css_selector("span[class='num value']").text.replace(",", "")
-            )
-            color_option.find_element_by_tag_name("button").click()
-            sizes = self.__get_sizes()
+            color_quantity = self.__get_quantity(color_option)
+            sizes = null()
+            color_price = null()
+            if color_quantity != 0:
+                color_price = int(
+                    color_option.find_element_by_css_selector("span[class='num value']").text.replace(',', '')
+                )
+                if self.browser.is_find_element(self.browser.By.CSS_SELECTOR, "input[value='색상']"):
+                    color_option.find_element_by_tag_name("button").click()
+                    sizes = self.__get_sizes()
+                    if idx < len(color_options) - 1:
+                        self.browser.web_driver.find_element_by_css_selector(".selected .btn").click()
             color = Color(
                 name=color_name,
                 price=color_price,
+                quantity=color_quantity,
                 sizes=sizes
             )
-            print("Test")
+            print("test")
