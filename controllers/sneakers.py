@@ -7,7 +7,8 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from sqlalchemy import null
 
-from models.tables import ProductModel
+from models.tables import ProductModel, OptionModel
+from models.shopping_database import ShoppingDatabase
 from views.browser import Browser
 
 
@@ -17,22 +18,17 @@ class OptionType(Enum):
 
 
 @dataclass
-class OptionData:
-    name: str
-    price: Optional[str]
-    quantity: int
-
-
-@dataclass
 class Option:
-    title: str
-    element: WebElement
-    data: Optional[List[OptionData]]
+    type: str
+    name: str
+    price: Optional[int]
+    quantity: int
 
 
 class Sneakers:
     def __init__(self, browser: Browser):
         self.browser = browser
+        self.product_id = None
 
     def insert(self, product_url: str):
         self.browser.web_driver_wait(
@@ -76,16 +72,20 @@ class Sneakers:
         courier = self.browser.web_driver.find_element_by_css_selector(".delivery span.text_num").text
         benefits = [benefit.text for benefit in
                     self.browser.web_driver.find_elements_by_css_selector(".benefit .c_product_btn_more5")]
-        ProductModel(
-            url=product_url,
-            name=name,
-            price=price,
-            courier=courier,
-            delivery_charge=delivery_charge,
-            arrival_date=arrival_date,
-            arrival_probability=arrival_probability,
-            benefit=benefits,
+        ShoppingDatabase().session.add(
+            ProductModel(
+                url=product_url,
+                name=name,
+                price=price,
+                courier=courier,
+                delivery_charge=delivery_charge,
+                arrival_date=arrival_date,
+                arrival_probability=arrival_probability,
+                benefit=benefits,
+            )
         )
+        ShoppingDatabase().session.commit()
+
 
     # def __get_sizes(self) -> List[Size]:
     #     size_container_tag = "div[class='accordion_section bot_option_section " \
@@ -126,20 +126,30 @@ class Sneakers:
             pass
         return null()
 
-    def __get_first_option(self, option_elements: List[WebElement]) -> WebElement:
-        for idx, element in enumerate(option_elements):
-            option_type = element.find_element_by_tag_name("input").get_attribute("value")
-            if option_type == "색상":
-                return element
-            elif option_type == "사이즈":
-                return element
+    def __get_price(self, option: WebElement) -> int:
+        try:
+            return int(
+                option.find_element_by_css_selector("span[class='num value']").text.replace(',', '')
+            )
+        except NoSuchElementException:
+            pass
+        return null()
+
+    def __get_option(self, value: str) -> str:
+        if value == "색상":
+            return OptionType.COLOR.value
+        elif value == "사이즈":
+            return OptionType.SIZE.value
         raise ValueError("알 수 없는 옵션입니다.")
 
-    def __get_option_data(self, option_elements):
-        for option_element in option_elements:
-            name = option_element.find_element_by_tag_name("strong").text
-            quantity = self.__get_quantity(option_element)
+    def __get_next(self, option_element: WebElement):
+        try:
+            return option_element.find_element_by_css_selector(
+                "button[class='c_product_btn c_product_btn_select']"
+            ).click
+        except NoSuchElementException:
             pass
+        return null()
 
     def __insert_options(self):
         is_exist_clearance_number = self.__input_personal_customs_clearance_unique_number()
@@ -149,7 +159,29 @@ class Sneakers:
         option_elements = self.browser.web_driver.find_elements_by_css_selector(option_selector)
         if is_exist_clearance_number:
             option_elements.pop(0)
-        self.__get_option_data(option_elements)
+
+        for option_idx, option_element in enumerate(option_elements):
+            is_last_option = option_idx == len(option_elements) - 1
+            type_ = self.__get_option(
+                option_element.find_element_by_tag_name("input").get_attribute("value")
+            )
+            items = []
+            self.browser.web_driver_wait(
+                (self.browser.By.CSS_SELECTOR, "#buyList > li li"),
+                expected_conditions.visibility_of_all_elements_located)
+            for option_item in option_element.find_elements_by_tag_name("li"):
+                name = option_item.find_element_by_tag_name("strong").text
+                quantity = self.__get_quantity(option_element)
+                price = self.__get_price(option_element)
+                OptionModel(
+                    product_id=12,
+                    type=type_,
+                    name=name,
+                    price=price,
+                    quantity=quantity
+                )
+                # next_ = self.__get_next(option_element) if not is_last_option else None
+
         # color_name = color_option.find_element_by_tag_name("strong").text
         # color_quantity = self.__get_quantity(color_option)
         # sizes = null()
